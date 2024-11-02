@@ -1,98 +1,247 @@
 <script lang="ts">
-  import { createEventDispatcher } from 'svelte';
+	let isNavOpen = false;
+	import SideNav from "./SideNav.svelte";
 
-  const dispatch = createEventDispatcher();
+	let activeSection = "home"; // Default to home/welcome page view
+	let showAddPatientForm = false;
+	let BASE_URL = localStorage.getItem('BASE_URL') || "";
+	let dateError = '';
 
-  let firstName = '';
-  let lastName = '';
-  let gender = '';
-  let birthDate = '';
-  let phoneNumber = '';
+	function toggleNav() {
+		isNavOpen = !isNavOpen;
+	}
 
-  function handleSubmit() {
-    const newPatient = {
-      firstName,
-      lastName,
-      gender,
-      birthDate,
-      phoneNumber
-    };
+	function setActiveSection(section: string) {
+		activeSection = section;
+		isNavOpen = false; // Close nav after selection on mobile
+	}
 
-    dispatch('addPatient', newPatient);
+	let newPatient = {
+		firstName: "",
+		lastName: "",
+		gender: "",
+		birthDate: "",
+		phoneNumber: "",
+	};
 
-    // Clear the form
-    firstName = '';
-    lastName = '';
-    gender = '';
-    birthDate = '';
-    phoneNumber = '';
-  }
+	// Add this function to get the current date in YYYY-MM-DD format
+	function getCurrentDate(): string {
+		return new Date().toISOString().split("T")[0];
+	}
+
+	function isValidName(name: string): boolean {
+		return /^[a-zA-Z\s-]{1,50}$/.test(name);
+	}
+
+	function validateNewPatientForm(): string {
+		if (!newPatient.firstName || !newPatient.lastName) {
+			return "First name and last name are required.";
+		}
+		if (
+			!isValidName(newPatient.firstName) ||
+			!isValidName(newPatient.lastName)
+		) {
+			return "Invalid First name/Last name. Please use only letters, spaces, and hyphens (max 50 characters).";
+		}
+		if (!newPatient.gender) {
+			return "Please select a gender.";
+		}
+		if (!newPatient.birthDate) {
+			return "Birth date is required.";
+		}
+
+		const currentDate = getCurrentDate();
+		if (newPatient.birthDate > currentDate) {
+			return "Birth date cannot be in the future.";
+		}
+
+		if (!newPatient.phoneNumber) {
+			return "Phone number is required.";
+		}
+		if (!/^\d{5,15}$/.test(newPatient.phoneNumber)) {
+			return "Invalid phone number. Please enter 5-15 digits.";
+		}
+		return "";
+	}
+
+	function validateDate(date: string) {
+		if (!date) {
+			dateError = 'Birth date is required';
+			return false;
+		}
+
+		const birthDate = new Date(date);
+		const today = new Date();
+		const minDate = new Date('1900-01-01');
+		
+		if (isNaN(birthDate.getTime())) {
+			dateError = 'Invalid date format';
+			return false;
+		}
+		
+		if (birthDate < minDate) {
+			dateError = 'Date cannot be before 1900-01-01';
+			return false;
+		}
+		
+		if (birthDate > today) {
+			dateError = 'Date cannot be in the future';
+			return false;
+		}
+
+		dateError = '';
+		return true;
+	}
+
+	async function addPatient() {
+		const validationError = validateNewPatientForm();
+		if (validationError) {
+			alert(validationError);
+			return;
+		}
+
+		const patientResource = {
+			resourceType: "Patient",
+			name: [
+				{
+					use: "official",
+					family: newPatient.lastName,
+					given: [newPatient.firstName],
+				},
+			],
+			gender: newPatient.gender,
+			birthDate: newPatient.birthDate,
+			telecom: [
+				{
+					system: "phone",
+					value: newPatient.phoneNumber,
+					use: "mobile",
+				},
+			],
+		};
+
+		try {
+			const response = await fetch(BASE_URL+"/Patient", {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					// Add any necessary authentication headers here
+				},
+				body: JSON.stringify(patientResource),
+			});
+
+			if (!response.ok) {
+				throw new Error(`HTTP error! status: ${response.status}`);
+			}
+
+			const result = await response.json();
+			alert(`Patient added successfully with ID: ${result.id}`);
+			newPatient = {
+				firstName: "",
+				lastName: "",
+				gender: "",
+				birthDate: "",
+				phoneNumber: "",
+			};
+		} catch (error) {
+			console.error("Error adding patient:", error);
+			alert("Failed to add patient. Please try again.");
+		}
+	}
 </script>
 
-<form on:submit|preventDefault={handleSubmit}>
-  <div class="form-group">
-    <label for="firstName">First Name</label>
-    <input id="firstName" type="text" bind:value={firstName} required>
-  </div>
-  <div class="form-group">
-    <label for="lastName">Last Name</label>
-    <input id="lastName" type="text" bind:value={lastName} required>
-  </div>
-  <div class="form-group">
-    <label for="gender">Gender</label>
-    <select id="gender" bind:value={gender} required>
-      <option value="">Select gender</option>
-      <option value="male">Male</option>
-      <option value="female">Female</option>
-      <option value="other">Other</option>
-    </select>
-  </div>
-  <div class="form-group">
-    <label for="birthDate">Birth Date</label>
-    <input id="birthDate" type="date" bind:value={birthDate} required>
-  </div>
-  <div class="form-group">
-    <label for="phoneNumber">Phone Number</label>
-    <input id="phoneNumber" type="tel" bind:value={phoneNumber} required>
-  </div>
-  <button type="submit" class="btn-primary">Add Patient</button>
-</form>
+<main class:nav-open={isNavOpen}>
+	<SideNav isNavOpen={isNavOpen} />
+		<h1 class="text-2xl pb-4">Add New Patient</h1>
+		<form on:submit|preventDefault={addPatient}>
+			<input
+				type="text"
+				placeholder="First Name"
+				bind:value={newPatient.firstName}
+				required
+			/>
+			<input
+				type="text"
+				placeholder="Last Name"
+				bind:value={newPatient.lastName}
+				required
+			/>
+			<select bind:value={newPatient.gender} required>
+				<option value="">Select gender</option>
+				<option value="male">Male</option>
+				<option value="female">Female</option>
+				<option value="other">Other</option>
+			</select>
+			<div class="input-group">
+				<input
+					type="date"
+					bind:value={newPatient.birthDate}
+					min="1900-01-01"
+					max={getCurrentDate()}
+					on:blur={() => validateDate(newPatient.birthDate)}
+					class:error={dateError}
+					required
+				/>
+				{#if dateError}
+					<span class="error-message">{dateError}</span>
+				{/if}
+			</div>
+			<input
+				type="tel"
+				placeholder="Phone Number"
+				bind:value={newPatient.phoneNumber}
+				required
+			/>
+		<button type="submit" class="btn-secondary">Add Patient</button>
+	</form>
+</main>
 
 <style>
-  form {
-    max-width: 400px;
-    margin: 0 auto;
-  }
+	main {
+		padding: 20px;
+		text-align: center;
+	}
 
-  .form-group {
-    margin-bottom: 1rem;
-  }
+	form {
+		display: flex;
+		flex-direction: column;
+		gap: 10px;
+		max-width: 400px;
+		margin: 0 auto;
+	}
 
-  label {
-    display: block;
-    margin-bottom: 0.5rem;
-  }
+	input,
+	select {
+		padding: 8px 12px;
+		font-size: 14px;
+		border: 1px solid #ccc;
+		border-radius: 4px;
+	}
 
-  input, select {
-    width: 100%;
-    padding: 0.5rem;
-    font-size: 1rem;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-  }
+	.btn-secondary {
+		padding: 10px 20px;
+		color: white;
+		background-color: #008cba;
+		border: none;
+		border-radius: 4px;
+		cursor: pointer;
+		font-size: 16px;
+	}
 
-  .btn-primary {
-    background-color: #007bff;
-    color: white;
-    padding: 0.5rem 1rem;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 1rem;
-  }
+	.input-group {
+		display: flex;
+		flex-direction: column;
+		align-items: start;
+		gap: 4px;
+	}
 
-  .btn-primary:hover {
-    background-color: #0056b3;
-  }
+	.error {
+		border-color: #dc3545;
+	}
+
+	.error-message {
+		color: #dc3545;
+		font-size: 0.875rem;
+		text-align: left;
+	}
 </style>
-
